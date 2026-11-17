@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>体彩足球 大小球实时分析</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:#f5f7fa;color:#333;margin:0;padding:20px;font-size:14px}
+.container{max-width:1500px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.06);padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid #eee}
+header h1{margin:0;font-size:22px;color:#1a1a1a}
+.status-bar{display:flex;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap}
+#fetchStatus{padding:4px 10px;border-radius:20px;font-weight:500;background:#e6f7e6;color:#2e7d32}
+#fetchStatus.err{background:#ffebee;color:#c62828}
+#lastUpdate{color:#666}
+#countBadge{background:#e3f2fd;color:#1565c0;padding:4px 10px;border-radius:20px;font-weight:600}
+.initial-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 13px;border-radius:8px;font-size:13px;margin-bottom:14px;background:#fff8e1;border-left:4px solid #ffc107;color:#6d4c41}
+.initial-bar.ok{background:#e8f5e9;border-left-color:#43a047;color:#1b5e20}
+.initial-bar.wait{background:#eceff1;border-left-color:#90a4ae;color:#455a64}
+.initial-bar b{font-weight:600}
+.controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;align-items:center}
+.btn{border:none;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;transition:all .2s;font-weight:500;outline:none}
+.btn:hover{opacity:.9;transform:translateY(-1px)}
+.btn-primary{background:#1976d2;color:#fff}
+.btn-toggle{background:#e3f2fd;color:#1565c0}
+.btn-toggle.off{background:#f5f5f5;color:#999}
+.btn-sm{background:#fff3e0;color:#e65100;padding:5px 11px;font-size:12px}
+#refreshInterval,#searchInput{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px}
+#searchInput{min-width:180px}
+.rules-panel{background:#fafafa;border-radius:8px;padding:16px;margin-bottom:18px}
+.rules-panel h3{margin:0 0 12px;font-size:15px;color:#444}
+.rules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.rule-card{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:12px;font-size:12px;line-height:1.6}
+.rule-card.combined-card{background:#fff8e1;border-color:#ffe082}
+.rule-card strong{display:block;margin-bottom:6px;color:#222;font-size:13px}
+.table-wrap{overflow-x:auto;border-radius:8px;border:1px solid #e8e8e8}
+table{width:100%;border-collapse:collapse;min-width:1200px}
+th,td{padding:9px 6px;text-align:center;border-bottom:1px solid #eee;font-size:13px;white-space:nowrap}
+th{background:#f0f4f8;color:#555;font-weight:600}
+th.section-initial{background:#fff3e0;color:#e65100}
+th.section-live{background:#e3f2fd;color:#0d47a1}
+tr:hover{background:#fafafa}
+.teams-col{text-align:left;min-width:180px;white-space:normal}
+.teams-main{font-weight:500}
+.vs{color:#999;margin:0 6px;font-size:12px}
+.num{font-family:"SFMono-Regular",Consolas,monospace;font-weight:600;color:#333}
+.result-col{min-width:100px}
+.rule-tag,.result-tag{display:inline-block;padding:3px 8px;border-radius:12px;font-size:12px;font-weight:500}
+.rule-tag.big{background:#ffebee;color:#c62828}
+.rule-tag.small{background:#e8f5e9;color:#2e7d32}
+.rule-none{color:#bbb}
+.waiting{color:#bbb;font-size:11px;font-style:italic}
+.result-box{border-radius:6px;padding:6px 8px;font-weight:600}
+.result-box.big{background:#ffebee;color:#c62828}
+.result-box.small{background:#e8f5e9;color:#2e7d32}
+.result-box.flat{background:#f5f5f5;color:#666}
+.result-goals{font-size:13px}
+.result-label{font-size:11px;opacity:.85;margin-top:2px}
+.empty-row td{color:#999;padding:30px}
+footer{margin-top:20px;text-align:center;font-size:12px;color:#999;line-height:1.8}
+@media (max-width:768px){
+  body{padding:10px}
+  .container{padding:14px}
+  header{flex-direction:column;align-items:flex-start}
+  .controls{flex-direction:column;align-items:stretch}
+  .btn,#refreshInterval,#searchInput{width:100%}
+  table{min-width:1050px}
+  th,td{padding:7px 4px;font-size:12px}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>体彩足球 大小球实时分析</h1>
+    <div class="status-bar">
+      <span id="fetchStatus">准备中...</span>
+      <span id="lastUpdate">--</span>
+      <span id="countBadge">0 场</span>
+    </div>
+  </header>
+
+  <div id="initialBar" class="initial-bar wait">
+    <span id="initialText">初盘状态检查中...</span>
+    <button id="btnPinInitial" class="btn btn-sm">手动固定今日初盘</button>
+  </div>
+
+  <div class="controls">
+    <button id="btnRefresh" class="btn btn-primary">立即刷新</button>
+    <button id="btnAuto" class="btn btn-toggle">自动刷新：开</button>
+    <select id="refreshInterval">
+      <option value="30">30 秒</option>
+      <option value="60" selected>60 秒</option>
+      <option value="120">2 分钟</option>
+      <option value="300">5 分钟</option>
+    </select>
+    <input type="text" id="searchInput" placeholder="搜索球队/场次/联赛">
+  </div>
+
+  <div class="rules-panel">
+    <h3>判定规则速查</h3>
+    <div class="rules-grid">
+      <div class="rule-card">
+        <strong>规则1：看0赔率</strong>
+        <div>0-10 → 1、2球<br>10-14 → 2、3球<br>15-20 → 3、4球<br>20+ → 4、5、6、7+球</div>
+      </div>
+      <div class="rule-card">
+        <strong>规则2：看7+赔率</strong>
+        <div>&gt;50 → 0、1球<br>35-50 → 1、2球<br>25-35 → 2、3球<br>20-25 → 3、4球<br>15-20 → 4、5球<br>10-15 → 4、5、6球<br>&lt;10 尽量不考虑</div>
+      </div>
+      <div class="rule-card combined-card">
+        <strong>综合推荐：初盘 ∪ 实盘 规则1+规则2 并集</strong>
+        <div>取初盘规则1、初盘规则2、实盘规则1、实盘规则2 四个区间的并集，按均值判大/小/看平。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2">场次</th>
+          <th rowspan="2">联赛</th>
+          <th rowspan="2" class="teams-col">对阵</th>
+          <th colspan="6" class="section-initial">初盘（每天 11:05 取数）</th>
+          <th colspan="6" class="section-live">实盘（实时取数）</th>
+          <th rowspan="2" class="result-col">综合推荐</th>
+        </tr>
+        <tr>
+          <th class="num section-initial">0球</th>
+          <th class="num section-initial">7+球</th>
+          <th class="num section-initial">主胜</th>
+          <th class="num section-initial">主负</th>
+          <th class="section-initial">规则1</th>
+          <th class="section-initial">规则2</th>
+          <th class="num section-live">0球</th>
+          <th class="num section-live">7+球</th>
+          <th class="num section-live">主胜</th>
+          <th class="num section-live">主负</th>
+          <th class="section-live">规则1</th>
+          <th class="section-live">规则2</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr class="empty-row"><td colspan="16">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    数据来源：中国体育彩票竞彩官方 webapi.sporttery.cn，仅供分析参考。<br>
+    初盘保存在本设备浏览器中（每天 11:05 后首次打开自动固定，当天不再变化）。
+  </footer>
+</div>
+
+<script>
+'use strict';
+
+const API_URL = 'https://webapi.sporttery.cn/gateway/uniform/football/getMatchCalculatorV1.qry?channel=c';
+const INITIAL_HOUR = 11;
+const INITIAL_MINUTE = 5;
+const LS_PREFIX = 'jcfoot_initial_v1_';
+
+let matches = [];
+let autoRefresh = true;
+let timer = null;
+let lastPayload = null;
+
+const $ = id => document.getElementById(id);
+
+/* ---------- 时间：统一按北京时间 ---------- */
+function beijingNow() {
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utcMs + 8 * 3600000);
+}
+function bjDateKey(d) {
+  return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+}
+function bjTimeStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+    + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+}
+function initialTimeReached() {
+  const bj = beijingNow();
+  const th = new Date(bj);
+  th.setHours(INITIAL_HOUR, INITIAL_MINUTE, 0, 0);
+  return bj >= th;
+}
+
+/* ---------- 规则计算 ---------- */
+function predictGoals(s0, s7) {
+  let r1 = null, r2 = null;
+  const v0 = Number(s0) || 0, v7 = Number(s7) || 0;
+
+  if (v0 > 0) {
+    if (v0 < 10) r1 = { range: [1, 2], desc: '0-10 → 1、2球' };
+    else if (v0 < 15) r1 = { range: [2, 3], desc: '10-14 → 2、3球' };
+    else if (v0 <= 20) r1 = { range: [3, 4], desc: '15-20 → 3、4球' };
+    else r1 = { range: [4, 5, 6, 7], desc: '20+ → 4、5、6、7+球' };
+  }
+  if (v7 > 0) {
+    if (v7 > 50) r2 = { range: [0, 1], desc: '>50 → 0、1球' };
+    else if (v7 >= 35) r2 = { range: [1, 2], desc: '35-50 → 1、2球' };
+    else if (v7 >= 25) r2 = { range: [2, 3], desc: '25-35 → 2、3球' };
+    else if (v7 >= 20) r2 = { range: [3, 4], desc: '20-25 → 3、4球' };
+    else if (v7 >= 15) r2 = { range: [4, 5], desc: '15-20 → 4、5球' };
+    else if (v7 >= 10) r2 = { range: [4, 5, 6], desc: '10-15 → 4、5、6球' };
+    else r2 = { range: [], desc: '<10 尽量不考虑' };
+  }
+  return { r1, r2 };
+}
+
+function sizeLabelOf(union) {
+  if (!union || !union.length) return '-';
+  const avg = union.reduce((a, b) => a + b, 0) / union.length;
+  if (avg > 2.5) return '大球';
+  if (avg < 2.5) return '小球';
+  return '看平';
+}
+
+function combinePrediction(initialSnap, liveSnap) {
+  const set = new Set();
+  [initialSnap, liveSnap].forEach(src => {
+    if (!src) return;
+    ['r1', 'r2'].forEach(k => {
+      const r = src[k];
+      if (r && r.range) r.range.forEach(g => set.add(g));
+    });
+  });
+  const union = Array.from(set).sort((a, b) => a - b);
+  return { unionGoals: union, sizeLabel: sizeLabelOf(union) };
+}
+
+/* ---------- 初盘本地存储 ---------- */
+function loadInitial(businessDate) {
+  try {
+    const raw = localStorage.getItem(LS_PREFIX + businessDate);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+function saveInitial(businessDate, list) {
+  const entries = {};
+  list.forEach(m => {
+    if (!m.matchId) return;
+    entries[m.matchId] = {
+      s0: m.s0, s7: m.s7, homeWin: m.homeWin, awayWin: m.awayWin,
+      r1: m.live.r1, r2: m.live.r2
+    };
+  });
+  const data = { fetchedAt: bjTimeStr(beijingNow()), matches: entries };
+  try { localStorage.setItem(LS_PREFIX + businessDate, JSON.stringify(data)); } catch (e) {}
+  return data;
+}
+
+/* ---------- 数据抓取 ---------- */
+function safeNum(v) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+async function fetchMatches() {
+  const res = await fetch(API_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  if (String(data.errorCode) !== '0') throw new Error('接口返回错误 ' + data.errorCode);
+
+  const value = data.value || {};
+  const list = [];
+  (value.matchInfoList || []).forEach(day => {
+    const businessDate = day.businessDate || '';
+    (day.subMatchList || []).forEach(sub => {
+      const had = sub.had || {}, ttg = sub.ttg || {};
+      const s0 = safeNum(ttg.s0), s7 = safeNum(ttg.s7);
+      const homeWin = safeNum(had.h), awayWin = safeNum(had.a);
+      const pred = predictGoals(s0, s7);
+      list.push({
+        matchId: sub.matchId,
+        businessDate,
+        matchNumStr: sub.matchNumStr || '',
+        matchDate: sub.matchDate || '',
+        matchTime: sub.matchTime || '',
+        league: sub.leagueAbbName || '',
+        homeTeam: sub.homeTeamAbbName || '',
+        awayTeam: sub.awayTeamAbbName || '',
+        s0, s7, homeWin, awayWin,
+        live: { s0, s7, homeWin, awayWin, r1: pred.r1, r2: pred.r2 }
+      });
+    });
+  });
+
+  list.sort((a, b) => (a.matchDate + a.matchTime).localeCompare(b.matchDate + b.matchTime));
+  return { list, lastUpdateTime: value.lastUpdateTime || '', fetchTime: bjTimeStr(beijingNow()) };
+}
+
+/* ---------- 渲染 ---------- */
+function formatRange(arr) {
+  if (!arr || !arr.length) return '-';
+  const parts = [];
+  let start = arr[0], prev = arr[0];
+  const label = v => v === 7 ? '7+' : String(v);
+  for (let i = 1; i <= arr.length; i++) {
+    const cur = arr[i];
+    if (cur !== undefined && cur - prev === 1) { prev = cur; continue; }
+    if (prev - start >= 2) parts.push(label(start) + '-' + label(prev));
+    else for (let v = start; v <= prev; v++) parts.push(label(v));
+    start = cur; prev = cur;
+  }
+  return parts.join('、') + '球';
+}
+function renderRule(rule) {
+  if (!rule || !rule.range || !rule.range.length) return '<span class="rule-none">-</span>';
+  const cls = Math.max(...rule.range) >= 3 ? 'big' : 'small';
+  return '<span class="rule-tag ' + cls + '">' + formatRange(rule.range) + '</span>';
+}
+function renderResult(pred) {
+  if (!pred || !pred.unionGoals || !pred.unionGoals.length) return '<span class="result-tag">-</span>';
+  const cls = pred.sizeLabel === '大球' ? 'big' : (pred.sizeLabel === '小球' ? 'small' : 'flat');
+  return '<div class="result-box ' + cls + '"><div class="result-goals">' + formatRange(pred.unionGoals)
+    + '</div><div class="result-label">' + pred.sizeLabel + '</div></div>';
+}
+function fmtOdds(v) { return (v && Number(v) !== 0) ? Number(v).toFixed(2) : '-'; }
+
+function renderSnapshot(snap, isLive) {
+  if (!snap) {
+    const ph = isLive ? '-' : '<span class="waiting">暂无初盘</span>';
+    return '<td class="num">' + ph + '</td><td class="num">' + ph + '</td><td class="num">' + ph
+      + '</td><td class="num">' + ph + '</td><td>' + ph + '</td><td>' + ph + '</td>';
+  }
+  return '<td class="num">' + fmtOdds(snap.s0) + '</td>'
+    + '<td class="num">' + fmtOdds(snap.s7) + '</td>'
+    + '<td class="num">' + fmtOdds(snap.homeWin) + '</td>'
+    + '<td class="num">' + fmtOdds(snap.awayWin) + '</td>'
+    + '<td>' + renderRule(snap.r1) + '</td>'
+    + '<td>' + renderRule(snap.r2) + '</td>';
+}
+
+function renderTable(list) {
+  const tbody = $('tableBody');
+  const keyword = $('searchInput').value.trim().toLowerCase();
+  const rows = [];
+
+  list.forEach(m => {
+    const text = (m.matchNumStr + ' ' + m.league + ' ' + m.homeTeam + ' ' + m.awayTeam).toLowerCase();
+    if (keyword && text.indexOf(keyword) === -1) return;
+    rows.push('<tr>'
+      + '<td><strong>' + m.matchNumStr + '</strong><br><small>' + (m.matchDate || '') + ' ' + (m.matchTime || '').slice(0, 5) + '</small></td>'
+      + '<td>' + m.league + '</td>'
+      + '<td class="teams-col"><div class="teams-main">' + m.homeTeam + ' <span class="vs">VS</span> ' + m.awayTeam + '</div></td>'
+      + renderSnapshot(m.initial, false)
+      + renderSnapshot(m.live, true)
+      + '<td class="result-col">' + renderResult(m.predictions) + '</td>'
+      + '</tr>');
+  });
+
+  tbody.innerHTML = rows.length ? rows.join('')
+    : '<tr class="empty-row"><td colspan="16">无匹配数据</td></tr>';
+}
+
+/* ---------- 初盘状态条 ---------- */
+function updateInitialBar() {
+  const bar = $('initialBar'), txt = $('initialText'), btn = $('btnPinInitial');
+  const today = bjDateKey(beijingNow());
+  const store = loadInitial(today);
+
+  if (store) {
+    bar.className = 'initial-bar ok';
+    txt.innerHTML = '初盘已固定：<b>' + store.fetchedAt + '</b>（今天不再变化，覆盖 ' + Object.keys(store.matches).length + ' 场）';
+    btn.style.display = '';
+  } else if (!initialTimeReached()) {
+    bar.className = 'initial-bar wait';
+    txt.innerHTML = '今天还未到 <b>11:05</b>，暂无初盘。11:05 后首次打开页面会自动固定初盘。';
+    btn.style.display = 'none';
+  } else {
+    bar.className = 'initial-bar wait';
+    txt.innerHTML = '已过 11:05，正在自动固定今日初盘...';
+    btn.style.display = '';
+  }
+}
+
+/* ---------- 主加载流程 ---------- */
+async function loadLive(forceRepin) {
+  $('fetchStatus').textContent = '正在刷新...';
+  $('fetchStatus').className = '';
+  try {
+    const payload = await fetchMatches();
+    lastPayload = payload;
+    const list = payload.list;
+
+    // 今天（北京日期）作为初盘存储键；同时兼容接口返回的 businessDate
+    const todayKey = bjDateKey(beijingNow());
+
+    if (forceRepin) {
+      saveInitial(todayKey, list);
+    } else if (initialTimeReached() && !loadInitial(todayKey) && list.length) {
+      // 11:05 后首次打开 → 自动固定初盘
+      saveInitial(todayKey, list);
+    }
+
+    const store = loadInitial(todayKey);
+
+    list.forEach(m => {
+      m.initial = null;
+      if (store && store.matches && store.matches[m.matchId]) {
+        const s = store.matches[m.matchId];
+        m.initial = { s0: s.s0, s7: s.s7, homeWin: s.homeWin, awayWin: s.awayWin, r1: s.r1, r2: s.r2 };
+      }
+      m.predictions = combinePrediction(m.initial, m.live);
+    });
+
+    matches = list;
+    renderTable(matches);
+    updateInitialBar();
+
+    $('lastUpdate').textContent = '实盘更新：' + (payload.lastUpdateTime || payload.fetchTime);
+    $('countBadge').textContent = matches.length + ' 场';
+    $('fetchStatus').textContent = store ? '实盘数据' : '实盘数据（初盘待定）';
+    $('fetchStatus').className = '';
+  } catch (err) {
+    $('fetchStatus').textContent = '获取失败：' + err.message;
+    $('fetchStatus').className = 'err';
+    if (!matches.length) {
+      $('tableBody').innerHTML = '<tr class="empty-row"><td colspan="16">数据获取失败：' + err.message
+        + '<br><small>请检查网络后点击「立即刷新」</small></td></tr>';
+    }
+  }
+}
+
+/* ---------- 交互 ---------- */
+function setAutoRefresh() {
+  clearInterval(timer);
+  if (autoRefresh) {
+    const sec = parseInt($('refreshInterval').value, 10);
+    timer = setInterval(() => loadLive(false), sec * 1000);
+  }
+}
+
+$('btnRefresh').addEventListener('click', () => loadLive(false));
+$('btnAuto').addEventListener('click', () => {
+  autoRefresh = !autoRefresh;
+  $('btnAuto').textContent = autoRefresh ? '自动刷新：开' : '自动刷新：关';
+  $('btnAuto').classList.toggle('off', !autoRefresh);
+  setAutoRefresh();
+});
+$('refreshInterval').addEventListener('change', setAutoRefresh);
+$('searchInput').addEventListener('input', () => renderTable(matches));
+$('btnPinInitial').addEventListener('click', () => {
+  const today = bjDateKey(beijingNow());
+  const st = loadInitial(today);
+  const msg = st
+    ? '今日初盘已固定在 ' + st.fetchedAt + '。\n\n要用当前实时数据覆盖它吗？'
+    : '用当前实时数据固定为今日初盘？';
+  if (confirm(msg)) loadLive(true);
+});
+
+/* ---------- 启动 ---------- */
+updateInitialBar();
+loadLive(false);
+setAutoRefresh();
+</script>
+</body>
+</html>
